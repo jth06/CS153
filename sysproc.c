@@ -121,10 +121,15 @@ int sys_waitpid(void) {
 int
 sys_setpriority(void)
 {
-  int p = 31;
-  argint(0, &p);
-  return setpriority(p);
+  int p;
+  if(argint(0,&p) < 0){
+      return -1;
+   } 
+   else {
+      return setpriority(p);
+   }
 }
+
 int
 sys_getpriority(void) {
 	return getpriority();

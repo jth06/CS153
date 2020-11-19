@@ -330,40 +330,72 @@ scheduler(void)
 
   struct proc *tempT = ptable.proc;
 
-  int min = 31; 
+  //int min = 31; 
   
   for(;;){
-    min = 31;
+    //min = 31;
     // Enable interrupts on this processor.
     sti();
 
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
+    tempT = ptable.proc;
+
+    // for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    //   if(p->priority <= min && p->state == RUNNABLE) {
+    //     min = p->priority;
+    //     tempT = p;
+    //   }
+    // }
+
+    // for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    //   if(p->state != RUNNABLE)
+    //     continue;
+
+    //   // Switch to chosen process.  It is the process's job
+    //   // to release ptable.lock and then reacquire it
+    //   // before jumping back to us.
+    //   if(tempT->state != RUNNABLE)
+    //     continue;
+    //   c->proc = tempT;
+    //   switchuvm(tempT);
+    //   tempT->state = RUNNING;
+
+    //   swtch(&(c->scheduler), tempT->context);
+    //   switchkvm();
+
+    //   // Process is done running for now.
+    //   // It should have changed its p->state before coming back.
+    //   c->proc = 0;
+    // }
+
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->priority <= min && p->state == RUNNABLE) {
-        min = p->priority;
+      if(p->state != RUNNABLE || p->priority > tempT->priority){
+        if(p->state == RUNNABLE){
+          if(p->priority >0){
+            p->priority--; // increase priroity
+          }
+        }
+        continue;
+      }
+      
+      if(p->priority < tempT->priority){
         tempT = p;
+      }
+      else{
+        if(p->priority >0){
+            p->priority--;
+        }
       }
     }
 
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(tempT->state != RUNNABLE)
-        continue;
+    c->proc = tempT;
+    switchuvm(tempT);
+    tempT->state = RUNNING;
+    swtch(&c->scheduler, tempT->context);
+    switchkvm();
+    c->proc = 0;
 
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      c->proc = tempT;
-      switchuvm(tempT);
-      tempT->state = RUNNING;
-
-      swtch(&(c->scheduler), tempT->context);
-      switchkvm();
-
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
-      c->proc = 0;
-    }
     release(&ptable.lock);
 
   }
@@ -396,10 +428,15 @@ sched(void)
 }
 
 int setpriority(int num) {
+  if(num < 0 || num > 31)
+    return -1;
+
   struct proc *p = myproc();
+  acquire(&ptable.lock);
   if(num >= 0 && num <= 31)
 	  p->priority = num;
-  return num;
+  release(&ptable.lock);
+  return 0;
 }
 
 int getpriority() {
