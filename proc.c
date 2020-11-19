@@ -112,6 +112,8 @@ found:
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
 
+  p->priority = 10;
+
   return p;
 }
 
@@ -325,25 +327,37 @@ scheduler(void)
   struct proc *p;
   struct cpu *c = mycpu();
   c->proc = 0;
+
+  struct proc *tempT = ptable.proc;
+
+  int min = 31; 
   
   for(;;){
+    min = 31;
     // Enable interrupts on this processor.
     sti();
 
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE)
+      if(p->priority <= min && p->state == RUNNABLE) {
+        min = p->priority;
+        tempT = p;
+      }
+    }
+
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(tempT->state != RUNNABLE)
         continue;
 
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
+      c->proc = tempT;
+      switchuvm(tempT);
+      tempT->state = RUNNING;
 
-      swtch(&(c->scheduler), p->context);
+      swtch(&(c->scheduler), tempT->context);
       switchkvm();
 
       // Process is done running for now.
@@ -379,6 +393,13 @@ sched(void)
   intena = mycpu()->intena;
   swtch(&p->context, mycpu()->scheduler);
   mycpu()->intena = intena;
+}
+
+int setpriority(int num) {
+  struct proc *p = myproc();
+  if(num >= 0 && num <= 31)
+	  p->priority = num;
+  return num;
 }
 
 // Give up the CPU for one scheduling round.
