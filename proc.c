@@ -402,6 +402,10 @@ int setpriority(int num) {
   return num;
 }
 
+int getpriority() {
+	struct proc *p = myproc();
+	return p->priority;
+}
 // Give up the CPU for one scheduling round.
 void
 yield(void)

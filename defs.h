@@ -124,6 +124,7 @@ void            exits(int);
 int             waits(int*);
 int             waitpid(int,int*,int);
 int             setpriority(int);
+int		getpriority();
 
 // swtch.S
 void            swtch(struct context**, struct context*);

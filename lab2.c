@@ -39,7 +39,7 @@ int WScheduler(void){
                     asm("nop"); 
                 }
             }
-            printf(1, "\n child# %d with priority %d has finished with priority %d! \n",getpid(),30-10*i, getpstat());		
+            printf(1, "\n child# %d with priority %d has finished with priority %d! \n",getpid(),30-10*i, getpriority());		
             exits(0);
         }
         else {

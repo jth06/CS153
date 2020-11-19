@@ -24,3 +24,4 @@
 #define SYS_waits  23
 #define SYS_waitpid 24
 #define SYS_setpriority 25
+#define SYS_getpriority 26

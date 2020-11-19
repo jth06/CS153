@@ -125,3 +125,7 @@ sys_setpriority(void)
   argint(0, &p);
   return setpriority(p);
 }
+int
+sys_getpriority(void) {
+	return getpriority();
+}
