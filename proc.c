@@ -112,8 +112,6 @@ found:
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
 
-  p->priority = 10;
-
   return p;
 }
 
@@ -161,18 +159,18 @@ int
 growproc(int n)
 {
   uint sz;
-  struct proc *curproc = myproc();
+  struct proc *currProc = myproc();
 
-  sz = curproc->sz;
+  sz = currProc->sz;
   if(n > 0){
-    if((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
+    if((sz = allocuvm(currProc->pgdir, sz, sz + n)) == 0)
       return -1;
   } else if(n < 0){
-    if((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0)
+    if((sz = deallocuvm(currProc->pgdir, sz, sz + n)) == 0)
       return -1;
   }
-  curproc->sz = sz;
-  switchuvm(curproc);
+  currProc->sz = sz;
+  switchuvm(currProc);
   return 0;
 }
 
@@ -184,7 +182,7 @@ fork(void)
 {
   int i, pid;
   struct proc *np;
-  struct proc *curproc = myproc();
+  struct proc *currProc = myproc();
 
   // Allocate process.
   if((np = allocproc()) == 0){
@@ -192,25 +190,26 @@ fork(void)
   }
 
   // Copy process state from proc.
-  if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
+  if((np->pgdir = copyuvm(currProc->pgdir, currProc->sz, currProc->stackSZ)) == 0){
     kfree(np->kstack);
     np->kstack = 0;
     np->state = UNUSED;
     return -1;
   }
-  np->sz = curproc->sz;
-  np->parent = curproc;
-  *np->tf = *curproc->tf;
+  np->sz = currProc->sz;
+  np->stackSZ = currProc->stackSZ;
+  np->parent = currProc;
+  *np->tf = *currProc->tf;
 
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
 
   for(i = 0; i < NOFILE; i++)
-    if(curproc->ofile[i])
-      np->ofile[i] = filedup(curproc->ofile[i]);
-  np->cwd = idup(curproc->cwd);
+    if(currProc->ofile[i])
+      np->ofile[i] = filedup(currProc->ofile[i]);
+  np->cwd = idup(currProc->cwd);
 
-  safestrcpy(np->name, curproc->name, sizeof(curproc->name));
+  safestrcpy(np->name, currProc->name, sizeof(currProc->name));
 
   pid = np->pid;
 
@@ -229,34 +228,34 @@ fork(void)
 void
 exit(void)
 {
-  struct proc *curproc = myproc();
+  struct proc *currProc = myproc();
   struct proc *p;
   int fd;
 
-  if(curproc == initproc)
+  if(currProc == initproc)
     panic("init exiting");
 
   // Close all open files.
   for(fd = 0; fd < NOFILE; fd++){
-    if(curproc->ofile[fd]){
-      fileclose(curproc->ofile[fd]);
-      curproc->ofile[fd] = 0;
+    if(currProc->ofile[fd]){
+      fileclose(currProc->ofile[fd]);
+      currProc->ofile[fd] = 0;
     }
   }
 
   begin_op();
-  iput(curproc->cwd);
+  iput(currProc->cwd);
   end_op();
-  curproc->cwd = 0;
+  currProc->cwd = 0;
 
   acquire(&ptable.lock);
 
   // Parent might be sleeping in wait().
-  wakeup1(curproc->parent);
+  wakeup1(currProc->parent);
 
   // Pass abandoned children to init.
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    if(p->parent == curproc){
+    if(p->parent == currProc){
       p->parent = initproc;
       if(p->state == ZOMBIE)
         wakeup1(initproc);
@@ -264,7 +263,7 @@ exit(void)
   }
 
   // Jump into the scheduler, never to return.
-  curproc->state = ZOMBIE;
+  currProc->state = ZOMBIE;
   sched();
   panic("zombie exit");
 }
@@ -276,14 +275,14 @@ wait(void)
 {
   struct proc *p;
   int havekids, pid;
-  struct proc *curproc = myproc();
+  struct proc *currProc = myproc();
   
   acquire(&ptable.lock);
   for(;;){
     // Scan through table looking for exited children.
     havekids = 0;
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->parent != curproc)
+      if(p->parent != currProc)
         continue;
       havekids = 1;
       if(p->state == ZOMBIE){
@@ -303,13 +302,13 @@ wait(void)
     }
 
     // No point waiting if we don't have any children.
-    if(!havekids || curproc->killed){
+    if(!havekids || currProc->killed){
       release(&ptable.lock);
       return -1;
     }
 
     // Wait for children to exit.  (See wakeup1 call in proc_exit.)
-    sleep(curproc, &ptable.lock);  //DOC: wait-sleep
+    sleep(currProc, &ptable.lock);  //DOC: wait-sleep
   }
 }
 
@@ -327,75 +326,31 @@ scheduler(void)
   struct proc *p;
   struct cpu *c = mycpu();
   c->proc = 0;
-
-  struct proc *tempT = ptable.proc;
-
-  //int min = 31; 
   
   for(;;){
-    //min = 31;
     // Enable interrupts on this processor.
     sti();
 
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
-    tempT = ptable.proc;
-
-    // for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    //   if(p->priority <= min && p->state == RUNNABLE) {
-    //     min = p->priority;
-    //     tempT = p;
-    //   }
-    // }
-
-    // for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    //   if(p->state != RUNNABLE)
-    //     continue;
-
-    //   // Switch to chosen process.  It is the process's job
-    //   // to release ptable.lock and then reacquire it
-    //   // before jumping back to us.
-    //   if(tempT->state != RUNNABLE)
-    //     continue;
-    //   c->proc = tempT;
-    //   switchuvm(tempT);
-    //   tempT->state = RUNNING;
-
-    //   swtch(&(c->scheduler), tempT->context);
-    //   switchkvm();
-
-    //   // Process is done running for now.
-    //   // It should have changed its p->state before coming back.
-    //   c->proc = 0;
-    // }
-
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE || p->priority > tempT->priority){
-        if(p->state == RUNNABLE){
-          if(p->priority >0){
-            p->priority--; // increase priroity
-          }
-        }
+      if(p->state != RUNNABLE)
         continue;
-      }
-      
-      if(p->priority < tempT->priority){
-        tempT = p;
-      }
-      else{
-        if(p->priority >0){
-            p->priority--;
-        }
-      }
+
+      // Switch to chosen process.  It is the process's job
+      // to release ptable.lock and then reacquire it
+      // before jumping back to us.
+      c->proc = p;
+      switchuvm(p);
+      p->state = RUNNING;
+
+      swtch(&(c->scheduler), p->context);
+      switchkvm();
+
+      // Process is done running for now.
+      // It should have changed its p->state before coming back.
+      c->proc = 0;
     }
-
-    c->proc = tempT;
-    switchuvm(tempT);
-    tempT->state = RUNNING;
-    swtch(&c->scheduler, tempT->context);
-    switchkvm();
-    c->proc = 0;
-
     release(&ptable.lock);
 
   }
@@ -427,22 +382,6 @@ sched(void)
   mycpu()->intena = intena;
 }
 
-int setpriority(int num) {
-  if(num < 0 || num > 31)
-    return -1;
-
-  struct proc *p = myproc();
-  acquire(&ptable.lock);
-  if(num >= 0 && num <= 31)
-	  p->priority = num;
-  release(&ptable.lock);
-  return 0;
-}
-
-int getpriority() {
-	struct proc *p = myproc();
-	return p->priority;
-}
 // Give up the CPU for one scheduling round.
 void
 yield(void)
@@ -592,137 +531,5 @@ procdump(void)
         cprintf(" %p", pc[i]);
     }
     cprintf("\n");
-  }
-}
-
-void exits(int status) {
-  struct proc *currProc = myproc();
-  struct proc *p;
-  int i;
-
-  if (currProc == initproc) {
-    panic("init exiting");
-  }
-  currProc->status = status;
-
-  for (i = 0; i < NOFILE; i++) {
-    if(currProc->ofile[i]){
-      fileclose(currProc->ofile[i]);
-      currProc->ofile[i] = 0;
-    }
-  }
-
-  begin_op();
-  iput(currProc->cwd);
-  end_op();
-  currProc->cwd = 0;
-
-  acquire(&ptable.lock);
-
-
-  wakeup1(currProc->parent);
-
-  for(p = ptable.proc; p< &ptable.proc[NPROC]; p++) {
-    if(p->parent == currProc) {
-      p->parent = initproc;
-      if(p->state == ZOMBIE) {
-        wakeup1(initproc);
-      }
-    }
-  }
-  currProc->state = ZOMBIE;
-  sched();
-  panic("zombie exit");
-
-}
-
-int waits(int* status) {
-  struct proc *p;
-  int haveChildren, pid;
-  struct proc* currProc = myproc();
-
-  acquire(&ptable.lock);
-  
-  while(1) {
-    haveChildren = 0;
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
-      if(p->parent != currProc) {
-        continue;
-      }
-      haveChildren = 1;
-
-      if(p->state == ZOMBIE) {
-        pid = p->pid;
-        kfree(p->kstack);
-        p->kstack = 0;
-        freevm(p->pgdir);
-        p->pid = 0;
-        p->parent = 0;
-        p->name[0] = 0;
-        p->killed = 0;
-        p->state = UNUSED;
-        
-        if (status) {
-          *status = p->status;
-          p->status = 0;
-        }
-        release(&ptable.lock);
-        return pid;
-      }
-    }
-  
-
-    if (!haveChildren || currProc->killed) {
-      release(&ptable.lock);
-      return -1;
-    }
-
-    sleep(currProc, &ptable.lock);
-  }
-}
-
-int waitpid(int pid, int* status, int op) {
-  struct proc *p;
-  struct proc *currProc = myproc();
-  int discovered = 0;
-
-  acquire(&ptable.lock);
-
-  while(1) {
-    for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
-      if (p->pid != pid) {
-        continue;
-      }
-      discovered = 1;
-
-      if (p->state == ZOMBIE) {
-        pid = p->pid;
-        kfree(p->kstack);
-        p->kstack = 0;
-        freevm(p->pgdir);
-        p->pid = 0;
-        p->parent = 0;
-        p->name[0] = 0;
-        p->killed = 0;
-        p->state = UNUSED;
-        release(&ptable.lock);
-        if (status) {
-          *status = p->status;
-          p->status = 0;
-        }
-        return pid;
-      }
-    }
-    if (!discovered || currProc->killed) {
-      release(&ptable.lock);
-      return -1;
-    }
-    if (op == 1) {
-      release(&ptable.lock);
-      return 0;
-    }
-
-    sleep(currProc, &ptable.lock);
-
   }
 }

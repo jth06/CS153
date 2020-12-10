@@ -41,11 +41,11 @@ static int
 fdalloc(struct file *f)
 {
   int fd;
-  struct proc *curproc = myproc();
+  struct proc *currProc = myproc();
 
   for(fd = 0; fd < NOFILE; fd++){
-    if(curproc->ofile[fd] == 0){
-      curproc->ofile[fd] = f;
+    if(currProc->ofile[fd] == 0){
+      currProc->ofile[fd] = f;
       return fd;
     }
   }
@@ -241,6 +241,7 @@ bad:
 static struct inode*
 create(char *path, short type, short major, short minor)
 {
+  uint off;
   struct inode *ip, *dp;
   char name[DIRSIZ];
 
@@ -248,7 +249,7 @@ create(char *path, short type, short major, short minor)
     return 0;
   ilock(dp);
 
-  if((ip = dirlookup(dp, name, 0)) != 0){
+  if((ip = dirlookup(dp, name, &off)) != 0){
     iunlockput(dp);
     ilock(ip);
     if(type == T_FILE && ip->type == T_FILE)
@@ -373,7 +374,7 @@ sys_chdir(void)
 {
   char *path;
   struct inode *ip;
-  struct proc *curproc = myproc();
+  struct proc *currProc = myproc();
   
   begin_op();
   if(argstr(0, &path) < 0 || (ip = namei(path)) == 0){
@@ -387,9 +388,9 @@ sys_chdir(void)
     return -1;
   }
   iunlock(ip);
-  iput(curproc->cwd);
+  iput(currProc->cwd);
   end_op();
-  curproc->cwd = ip;
+  currProc->cwd = ip;
   return 0;
 }
 

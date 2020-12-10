@@ -77,22 +77,24 @@ trap(struct trapframe *tf)
             cpuid(), tf->cs, tf->eip);
     lapiceoi();
     break;
-  case T_PGFLT:
-	struct proc* curproc = myproc();
-	uint PGFLTADDR = rcr2();
-	if((PGFLTADDR >= curproc->stackindex - PGSIZE) && (PGFLTADDR <= curproc->stackindex)){
-		pde_t *pgdir;
-		pgdir = curproc->pgdir;
-		if(allocuvm(pgdir, PGROUNDDOWN(PGFLTADDR), PGFLTADDR) == 0){
-			cprintf("case T_PGFLT in trap.c: allocuvm failed. Number of current allocated pages: %d\n", myproc()->stacksz);
-			exit();
-		}
-		cprintf("case T_PGFLT in trap.c: allocuvm succeeded. Number of pages allocated: %d\n", myproc()->stacksz);
-		curproc->stacksz += 1;
-		curproc->stackindex = (uint)PGROUNDDOWN(PGFLTADDR);
-	}
-	break;
 
+  case T_PGFLT:
+    // if the faulting address is chill then alloc a new page
+    if (tf->esp >= rcr2() && rcr2() < KERNBASE) {
+      uint curTop = KERNBASE - myproc()->stackSZ * PGSIZE;
+      if (allocuvm(myproc()->pgdir, PGROUNDDOWN(curTop - 1), curTop - 1)
+        == 0) {
+        cprintf("PGFLT: Page could not be allocated.\n");
+        exit();
+      }
+
+      myproc()->stackSZ++;
+      cprintf("PGFLT: %d pages currently allocated.\n", myproc()->stackSZ);
+    } else {
+      cprintf("PGFLT: Offending address is out of bounds.\n");
+      exit();
+    }
+    break;
 
   //PAGEBREAK: 13
   default:

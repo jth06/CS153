@@ -17,10 +17,10 @@
 int
 fetchint(uint addr, int *ip)
 {
-  if(addr >= STACKEND)
-	return -1;
+  //struct proc *currProc = myproc();
 
-
+  //if(addr >= currProc->stackSZ || addr+4 > currProc->stackSZ)
+  //  return -1;
   *ip = *(int*)(addr);
   return 0;
 }
@@ -32,12 +32,14 @@ int
 fetchstr(uint addr, char **pp)
 {
   char *s, *ep;
-  struct proc *curproc = myproc();
+  //struct proc *currProc = myproc();
 
-  if(addr >= STACKEND)
-    return -1;
+  //if(addr >= currProc->stackSZ)
+  //  return -1;
   *pp = (char*)addr;
-  ep = (char*)STACKEND;
+
+  //ep = (char*)currProc->stackSZ
+  ep = (char*)KERNBASE;
   for(s = *pp; s < ep; s++){
     if(*s == 0)
       return s - *pp;
@@ -59,12 +61,12 @@ int
 argptr(int n, char **pp, int size)
 {
   int i;
-  //struct proc *curproc = myproc();
+  //struct proc *currProc = myproc();
  
   if(argint(n, &i) < 0)
     return -1;
-  if(size < 0 || (uint)i >= STACKEND || (uint)i+size > STACKEND)
-    return -1;
+  //if(size < 0 || (uint)i >= currProc->stackSZ || (uint)i+size > currProc->stackSZ)
+    //return -1;
   *pp = (char*)i;
   return 0;
 }
@@ -103,11 +105,9 @@ extern int sys_unlink(void);
 extern int sys_wait(void);
 extern int sys_write(void);
 extern int sys_uptime(void);
-extern int sys_exits(void);
-extern int sys_waits(void);
-extern int sys_waitpid(void);
-extern int sys_setpriority(void);
-extern int sys_getpriority(void);
+
+extern int sys_shm_open(void);
+extern int sys_shm_close(void);
 
 static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -131,25 +131,22 @@ static int (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
-[SYS_exits]   sys_exits,
-[SYS_waits]   sys_waits,
-[SYS_waitpid] sys_waitpid,
-[SYS_setpriority] sys_setpriority,
-[SYS_getpriority] sys_getpriority,
+[SYS_shm_open] sys_shm_open,
+[SYS_shm_close] sys_shm_close
 };
 
 void
 syscall(void)
 {
   int num;
-  struct proc *curproc = myproc();
+  struct proc *currProc = myproc();
 
-  num = curproc->tf->eax;
+  num = currProc->tf->eax;
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
-    curproc->tf->eax = syscalls[num]();
+    currProc->tf->eax = syscalls[num]();
   } else {
     cprintf("%d %s: unknown sys call %d\n",
-            curproc->pid, curproc->name, num);
-    curproc->tf->eax = -1;
+            currProc->pid, currProc->name, num);
+    currProc->tf->eax = -1;
   }
 }

@@ -7,17 +7,20 @@
 #include "x86.h"
 #include "elf.h"
 
+#include "globals.h"
+
 int
 exec(char *path, char **argv)
 {
   char *s, *last;
   int i, off;
   uint argc, sz, sp, ustack[3+MAXARG+1];
+  uint stackSZ;
   struct elfhdr elf;
   struct inode *ip;
   struct proghdr ph;
   pde_t *pgdir, *oldpgdir;
-  struct proc *curproc = myproc();
+  struct proc *currProc = myproc();
 
   begin_op();
 
@@ -60,13 +63,18 @@ exec(char *path, char **argv)
   end_op();
   ip = 0;
 
-  // Allocate two pages at the next page boundary.
-  // Make the first inaccessible.  Use the second as the user stack.
   sz = PGROUNDUP(sz);
-  if((sz = allocuvm(pgdir, STACKEND - PGSIZE, STACKEND)) == 0)
+
+  // Make a new page right below the kernel memory for the stack
+  // The stack will grow downwards
+  if((allocuvm(pgdir, KERNBASE - PGSIZE - 1, KERNBASE - 1)) == 0) {
+    cprintf("You went to bad (exec.c creating stack page)");
     goto bad;
-  clearpteu(pgdir, (char*)(STACKEND - PGSIZE));
-  sp = STACKEND;
+  }
+  sp = KERNBASE - WORDSIZE;
+  stackSZ = 1;
+  // Make the page inaccessible
+  //clearpteu(pgdir, (char*)(sz - 2*PGSIZE));
 
   // Push argument strings, prepare rest of stack in ustack.
   for(argc = 0; argv[argc]; argc++) {
@@ -91,17 +99,16 @@ exec(char *path, char **argv)
   for(last=s=path; *s; s++)
     if(*s == '/')
       last = s+1;
-  safestrcpy(curproc->name, last, sizeof(curproc->name));
+  safestrcpy(currProc->name, last, sizeof(currProc->name));
 
   // Commit to the user image.
-  curproc->stacksz = 1;
-  curproc->stackindex = (uint)PGROUNDDOWN(sp);
-  oldpgdir = curproc->pgdir;
-  curproc->pgdir = pgdir;
-  curproc->sz = sz;
-  curproc->tf->eip = elf.entry;  // main
-  curproc->tf->esp = sp;
-  switchuvm(curproc);
+  oldpgdir = currProc->pgdir;
+  currProc->pgdir = pgdir;
+  currProc->sz = sz;
+  currProc->stackSZ = stackSZ;
+  currProc->tf->eip = elf.entry;  // main
+  currProc->tf->esp = sp;
+  switchuvm(currProc);
   freevm(oldpgdir);
   return 0;
 
